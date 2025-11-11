@@ -16,6 +16,10 @@ yarn-error.log*
 .branches/
 .temp/
 
+# IMPORTANT: Do NOT ignore migrations!
+# Migrations must be version controlled
+# !apps/supabase/migrations/**/*.sql
+
 # IDE
 .vscode/
 .idea/

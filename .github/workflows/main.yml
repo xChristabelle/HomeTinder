@@ -1,4 +1,4 @@
-name: Deploy Lambdas
+name: Deploy Database, Lambdas, and Edge Functions
 
 on:
   push:
@@ -16,7 +16,50 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 20
-      
+
+      # ========================================
+      # STEP 1: Install Supabase CLI
+      # ========================================
+      - name: Install Supabase CLI
+        run: |
+          npm install -g supabase@latest
+          supabase --version
+
+      # ========================================
+      # STEP 2: Deploy Database Migrations FIRST
+      # ========================================
+      - name: Link Supabase Project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          cd apps/supabase
+          supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
+
+      - name: Deploy Database Migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          cd apps/supabase
+          echo "🔄 Deploying database migrations..."
+          supabase db push --include-all
+          echo "✅ Database migrations deployed successfully"
+
+      # ========================================
+      # STEP 3: Deploy Edge Functions
+      # ========================================
+      - name: Deploy Edge Functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          cd apps
+          echo "🔄 Deploying Edge Functions..."
+          npx supabase functions deploy --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
+          echo "✅ Edge Functions deployed successfully"
+
+      # ========================================
+      # STEP 4: Deploy Lambda Functions
+      # ========================================
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -24,35 +67,47 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Who am I
+      - name: Verify AWS Identity
         run: aws sts get-caller-identity
 
-        # Deploy HomeTinderDBPopulate (Replicator)
-      - name: Build and Deploy HomeTinderDBPopulate
+      # Deploy HomeTinderDBPopulate (Replicator)
+      - name: Build and Deploy HomeTinderDBPopulate Lambda
         run: |
           cd apps/lambda/replicator
+          echo "🔄 Building replicator Lambda..."
           npm install
           zip -r ../../../../replicator.zip .
+          echo "🚀 Deploying replicator Lambda..."
           aws lambda update-function-code \
             --function-name HomeTinderDBPopulate \
             --zip-file fileb://../../../../replicator.zip \
             --region ${{ secrets.AWS_REGION }}
+          echo "✅ Replicator Lambda deployed successfully"
 
       # Deploy HomeTinderDBSync (ActiveSync)
-      - name: Build and Deploy HomeTinderDBSync
+      - name: Build and Deploy HomeTinderDBSync Lambda
         run: |
           cd apps/lambda/activeSync
+          echo "🔄 Building activeSync Lambda..."
           npm install
           zip -r ../../../../activeSync.zip .
+          echo "🚀 Deploying activeSync Lambda..."
           aws lambda update-function-code \
             --function-name HomeTinderDBSync \
             --zip-file fileb://../../../../activeSync.zip \
             --region ${{ secrets.AWS_REGION }}
+          echo "✅ ActiveSync Lambda deployed successfully"
 
-      #Deploy Supabase Edge Functions
-      - name: Deploy Edge Functions
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      # ========================================
+      # DEPLOYMENT SUMMARY
+      # ========================================
+      - name: Deployment Summary
+        if: success()
         run: |
-          cd apps
-          npx supabase functions deploy --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ Database migrations applied"
+          echo "✅ Edge Functions deployed"
+          echo "✅ Lambda functions deployed"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
